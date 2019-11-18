@@ -1,6 +1,7 @@
 from lxml import html
 from bs4 import BeautifulSoup
-from shutil import copyfile
+from os import mkdir
+from shutil import copyfile, rmtree
 import logging
 
 SRC_DIR = "C:/Users/rob/Google Drive/LBLR_Project/littlebass.com/"
@@ -9,15 +10,43 @@ DEST_DIR = "D:/Development/lblr/build"
 def lblr():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
     logging.info("Building book-friendly version of LBLR Chronicles.")
-    day_filename = "note0apr.html"
-    bookify_day(day_filename)
 
-def bookify_day(day_filename):
-    path_to_file = "{}/{}".format(SRC_DIR, day_filename)
+    rmtree(DEST_DIR, ignore_errors=True)
+    mkdir(DEST_DIR)
+
+    pages = find_all_pages()
+    for page in pages:
+        bookify_page(page)
+
+def find_all_pages():
+    logging.info("Reading LBLR Chronicles Archive to find every page...")
+    path_to_file = "{}/notesold.html".format(SRC_DIR)
+    with open(path_to_file) as open_html_file:
+        html_text = open_html_file.read()
+    archive = BeautifulSoup(html_text, "html.parser")
+    links = []
+    for link in archive.find_all("a"):
+        link_dest = link.get("href")
+        if link_dest:
+            logging.info("Found a link in LBLR Chronicles Archive: {}".format(link_dest))
+            links.append(link_dest)
+    # TODO: Links are ordered in reverse chronological order by year, but then within the year
+    # they are in chronological order.. need to figure out how to put them in the right order
+    links.reverse()
+    return links
+
+def bookify_page(page_filename):
+    logging.info("Attemping to make {} book-friendly...".format(page_filename))
+
+    path_to_file = "{}/{}".format(SRC_DIR, page_filename)
     with open(path_to_file) as open_html_file:
         html_text = open_html_file.read()
     entire_page = BeautifulSoup(html_text, "html.parser")
     table = entire_page.find("table")
+
+    if not table:
+        logging.error("No table found! Nothing to do for {}".format(page_filename))
+        return
 
     soup = BeautifulSoup(features="html.parser")
 
@@ -52,7 +81,7 @@ def bookify_day(day_filename):
             img_tag = soup.new_tag("img", src=link_href)
             img_div.append(img_tag)
         new_page_body.append(date_div)
-    dest_html_filename = "{}/{}".format(DEST_DIR, day_filename)
+    dest_html_filename = "{}/{}".format(DEST_DIR, page_filename)
     logging.info("Writing file {}...".format(dest_html_filename))
     with open(dest_html_filename, "w") as dest_html_file:
         dest_html_file.write(new_page_body.prettify())
