@@ -1,6 +1,6 @@
 from lxml import html
 from bs4 import BeautifulSoup
-from os import mkdir
+from os import mkdir, makedirs
 from shutil import copyfile, rmtree
 import logging
 import sys
@@ -8,6 +8,9 @@ from urllib.parse import unquote
 
 SRC_DIR = "C:/Users/rob/Google Drive/LBLR_Project/littlebass.com"
 DEST_DIR = "D:/Development/lblr/build"
+BLACKLIST = []
+
+PROBLEMATIC_LINKS = []
 
 def lblr():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
@@ -17,8 +20,20 @@ def lblr():
     mkdir(DEST_DIR)
 
     pages = find_all_pages()
+    BLACKLIST.extend(pages)
+    html_pages = []
     for page in pages:
-        bookify_page(page)
+        html_page = bookify_page(page)
+        if html_page:
+            html_pages.append(html_page)
+
+    dest_html_filename = "{}/index.html".format(DEST_DIR)
+    logging.info("Writing {}...".format(dest_html_filename))
+    with open(dest_html_filename, "w") as dest_html_file:
+        for html_page in html_pages:
+            dest_html_file.write(html_page.prettify())
+    logging.info("We found {} problematic links".format(len(PROBLEMATIC_LINKS)))
+    logging.info(PROBLEMATIC_LINKS)
 
 def find_all_pages():
     logging.info("Reading LBLR Chronicles Archive to find every page...")
@@ -30,20 +45,38 @@ def find_all_pages():
     for link in archive.find_all("a"):
         link_dest = link.get("href")
         if link_dest:
-            logging.info("Found a link in LBLR Chronicles Archive: {}".format(link_dest))
+            logging.debug("Found a link in LBLR Chronicles Archive: {}".format(link_dest))
             links.append(link_dest)
     # TODO: Links are ordered in reverse chronological order by year, but then within the year
     # they are in chronological order.. need to figure out how to put them in the right order
     links.reverse()
     return links
 
-def bookify_page(page_filename):
-    logging.info("Attempting to make {} book-friendly...".format(page_filename))
-
-    path_to_file = "{}/{}".format(SRC_DIR, page_filename)
+def get_html_soup(filename):
+    path_to_file = "{}/{}".format(SRC_DIR, filename)
     with open(path_to_file, errors="ignore") as open_html_file:
         html_text = open_html_file.read()
-    entire_page = BeautifulSoup(html_text, "html.parser")
+    return BeautifulSoup(html_text, "html.parser")
+
+def copy_from_src_to_dir(link_href):
+    src = "{}/{}".format(SRC_DIR, link_href)
+    dest = "{}/{}".format(DEST_DIR, link_href)
+    # Need to make sure that the directory we are copying to exists
+    img_dest_dir = "/".join(dest.split("/")[:-1])
+    makedirs(img_dest_dir, exist_ok=True)
+    logging.debug("Copying dependent file {}...".format(link_href))
+    copyfile(src, dest)
+
+def copy_all_images_found(soup):
+    img_tags = soup.find_all("img")
+    for img_tag in img_tags:
+        img_src = img_tag.get("src")
+        copy_from_src_to_dir(img_src)
+
+def bookify_page(page_filename):
+    logging.debug("Attempting to make {} book-friendly...".format(page_filename))
+
+    entire_page = get_html_soup(page_filename)
 
     page_script_element = entire_page.find("script")
     image_links = {}
@@ -55,7 +88,7 @@ def bookify_page(page_filename):
                     var_half, value_half = line.split("=")
                     var_name = var_half.split()[-1]
                     var_value = unquote(value_half.split('"')[1])
-                    logging.info("Found variable {}={}".format(var_name, var_value))
+                    logging.debug("Found variable {}={}".format(var_name, var_value))
                     image_links[var_name] = var_value
                 except ValueError as e:
                     print(e)
@@ -99,16 +132,32 @@ def bookify_page(page_filename):
                 if "javascript:open_win" in link_href:
                     link_var = unquote(link_href.split("(")[1][:-1])
                     link_href = image_links[link_var]
-                    src_img = "{}/{}".format(SRC_DIR, link_href)
-                    dest_img = "{}/{}".format(DEST_DIR, link_href)
-                    logging.info("Copying dependent file {}...".format(link_href))
-                    copyfile(src_img, dest_img)
-                img_tag = soup.new_tag("img", src=link_href)
-                img_div.append(img_tag)
+                    copy_from_src_to_dir(link_href)
+                    img_tag = soup.new_tag("img", src=link_href)
+                    img_div.append(img_tag)
+                elif ".jpg" in link_href:
+                    copy_from_src_to_dir(link_href)
+                    img_tag = soup.new_tag("img", src=link_href)
+                    img_div.append(img_tag)
+                elif link_href == "memorial.html":
+                    copy_from_src_to_dir("grampa.jpg")
+                    copy_from_src_to_dir("flag.jpg")
+                    memorial_html = get_html_soup("memorial.html")
+                    memorial_table = memorial_html.find("table")
+                    img_div.append(memorial_table)
+                elif ".html" in link_href and link_href in BLACKLIST:
+                    logging.warning("Found .html in blacklist: {}".format(link_href))
+                    pass
+                elif "http" in link_href or ".com" in link_href or "#" in link_href:
+                    pass
+                elif ".html" in link_href:
+                    # Handle pages which are links to other misc pages on littlebass.com
+                    link_soup = get_html_soup(link_href)
+                    copy_all_images_found(link_soup)
+                    img_div.append(link_soup)
+                else:
+                    PROBLEMATIC_LINKS.append(link_href)
         new_page_body.append(date_div)
-    dest_html_filename = "{}/{}".format(DEST_DIR, page_filename)
-    logging.info("Writing file {}...".format(dest_html_filename))
-    with open(dest_html_filename, "w") as dest_html_file:
-        dest_html_file.write(new_page_body.prettify())
+    return new_page_body
 
 lblr()
