@@ -13,6 +13,31 @@ BLACKLIST = []
 PROBLEMATIC_LINKS = []
 NO_TABLE_PAGES = []
 
+MONTHS_AND_YEARS = [
+    "January",
+    "February",
+    "March",
+    "April",
+    "May",
+    "June",
+    "July",
+    "August",
+    "September",
+    "October",
+    "November",
+    "December",
+    "1997",
+    "1998",
+    "1999",
+    "2000",
+    "2001",
+    "2002",
+    "2003",
+    "2004",
+    "2005",
+    "2006"
+]
+
 def lblr():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
     logging.info("Building book-friendly version of LBLR Chronicles.")
@@ -97,10 +122,18 @@ def copy_all_images_found(soup):
         img_src = img_tag.get("src")
         copy_from_src_to_dir(img_src)
 
+def find_month_header(entire_page):
+    for center in entire_page.find_all("center"):
+        for keyword in MONTHS_AND_YEARS:
+            if keyword in center.text:
+                return center.text
+
 def bookify_page(page_filename):
     logging.debug("Attempting to make {} book-friendly...".format(page_filename))
 
     entire_page = get_html_soup(page_filename)
+
+    month_header_text = find_month_header(entire_page)
 
     page_script_element = entire_page.find("script")
     image_links = {}
@@ -128,6 +161,11 @@ def bookify_page(page_filename):
     soup = BeautifulSoup(features="html.parser")
 
     new_page_body = soup.new_tag("body")
+
+    month_header = soup.new_tag("center")
+    month_header.string = month_header_text
+    new_page_body.append(month_header)
+
     for table_row in table.find_all("tr", recursive=False):
         columns = table_row.find_all("td", recursive=False)
         if len(columns) > 2:
