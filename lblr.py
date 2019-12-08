@@ -11,6 +11,7 @@ DEST_DIR = "D:/Development/lblr/build"
 BLACKLIST = []
 
 PROBLEMATIC_LINKS = []
+NO_TABLE_PAGES = []
 
 def lblr():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
@@ -20,6 +21,8 @@ def lblr():
     mkdir(DEST_DIR)
 
     pages = find_all_pages()
+    logging.info("list of all pages:")
+    logging.info(pages)
     BLACKLIST.extend(pages)
     html_pages = []
     for page in pages:
@@ -35,6 +38,9 @@ def lblr():
     logging.info("We found {} problematic links".format(len(PROBLEMATIC_LINKS)))
     logging.info(PROBLEMATIC_LINKS)
 
+    logging.info("We found {} no-table-pages".format(len(NO_TABLE_PAGES)))
+    logging.info(NO_TABLE_PAGES)
+
 def find_all_pages():
     logging.info("Reading LBLR Chronicles Archive to find every page...")
     path_to_file = "{}/notesold.html".format(SRC_DIR)
@@ -42,13 +48,31 @@ def find_all_pages():
         html_text = open_html_file.read()
     archive = BeautifulSoup(html_text, "html.parser")
     links = []
+    months = []
+    month = None
+    year_long_pages = [
+        "notes04.html",
+        "notes01.html",
+        "notes00.html",
+        "notes99.html",
+        "notes97.html",
+    ]
     for link in archive.find_all("a"):
         link_dest = link.get("href")
         if link_dest:
             logging.debug("Found a link in LBLR Chronicles Archive: {}".format(link_dest))
-            links.append(link_dest)
-    # TODO: Links are ordered in reverse chronological order by year, but then within the year
-    # they are in chronological order.. need to figure out how to put them in the right order
+            if link_dest in year_long_pages:
+                pass
+            if "jan" in link_dest:
+                if month:
+                    month.reverse()
+                    links.extend(month)
+                month = [link_dest]
+            else:
+                month.append(link_dest)
+    month.reverse()
+    links.extend(month)
+    links.extend(year_long_pages)
     links.reverse()
     return links
 
@@ -98,6 +122,7 @@ def bookify_page(page_filename):
 
     if not table:
         logging.error("No table found! Nothing to do for {}".format(page_filename))
+        NO_TABLE_PAGES.append(page_filename)
         return
 
     soup = BeautifulSoup(features="html.parser")
@@ -160,4 +185,5 @@ def bookify_page(page_filename):
         new_page_body.append(date_div)
     return new_page_body
 
-lblr()
+if __name__ == "__main__":
+    lblr()
